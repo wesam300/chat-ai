@@ -38,75 +38,19 @@ OPENROUTER_SITE_NAME = os.environ.get("OPENROUTER_SITE_NAME", "AI Chat")
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "dev-change-me-for-production")
 
 # قائمة الموديلات المجانية والموثوقة (تدعم العربية)
-M_QWEN_PRO = "qwen/qwen-2.5-72b-instruct"  # القوي والجديد
-M_QWEN_PLUS = "qwen/qwen-turbo"            # السريع والمجاني
+M_QWEN_36 = "qwen/qwen3.6-plus:free"       # الموديل الذي طلبته (قوي ومجاني)
+M_QWEN_PRO = "qwen/qwen-2.5-72b-instruct"  # البديل القوي
 M_GEMINI_LITE = "google/gemini-2.0-flash-lite-preview-02-05:free"
 M_GEMINI_PRO = "google/gemini-pro-1.5-exp:free"
+M_QWEN_TURBO = "qwen/qwen-turbo"
 M_MISTRAL_7B = "mistralai/mistral-7b-instruct:free"
-M_GEMMA_27B = "google/gemma-3-27b-it:free"
 
 
 def select_openrouter_model(message: str, has_image_attachments: bool, history_text: str) -> str:
-    # يختار موديل OpenRouter حسب نص الطلب والمرفقات (بدون عرض للمستخدم).
+    # يختار الموديل المفضل (افتراضياً Qwen 3.6 Plus كما طلبت)
     if has_image_attachments:
-        return M_NANO_VL
-    combined = f"{history_text[-4000:]} {message}".strip()
-    t = combined.lower()
-    # تضمين / تشابه / متجهات
-    embed_kw = (
-        "embed",
-        "embedding",
-        "vector",
-        "similarity",
-        "cosine",
-        "تضمين",
-        "تشابه",
-        "متجه",
-    )
-    if any(k in t for k in embed_kw):
-        return M_EMBED
-    # فيديو / أنيميشن
-    video_kw = (
-        "video",
-        "veo",
-        "wan",
-        "animation",
-        "animated",
-        "فيديو",
-        "توليد فيديو",
-        "أنيميشن",
-        "موشن",
-    )
-    if any(k in t for k in video_kw):
-        return M_VEO if (len(message) % 2 == 0) else M_WAN
-    # موسيقى / صوت
-    music_kw = ("music", "lyria", "song", "audio", "موسيقى", "أغنية", "لحن", "soundtrack")
-    if any(k in t for k in music_kw):
-        if "clip" in t or "مقطع" in message:
-            return M_LYRIA_CLIP
-        return M_LYRIA_PRO
-    # تفكير معمّق / كود / برهان
-    reason_kw = (
-        "proof",
-        "theorem",
-        "reasoning",
-        "code review",
-        "step by step",
-        "تحليل معمق",
-        "خطوة بخطوة",
-        "برهان",
-        "البرمجة المعقدة",
-    )
-    if any(k in t for k in reason_kw):
-        return M_RIVER
-    n = len(message.strip())
-    if 0 < n < 40:
-        return M_GEMMA_4
-    if n > 2200:
-        return M_GEMMA_27
-    if n > 900:
-        return M_GEMMA_12
-    return M_QWEN
+        return M_GEMINI_LITE
+    return M_QWEN_36
 
 
 def openrouter_headers() -> Dict[str, str]:
@@ -142,12 +86,12 @@ def complete_chat_with_fallback(messages: List[Dict[str, Any]], primary_model: s
     else:
         order = [
             primary_model,
+            M_QWEN_36,
             M_QWEN_PRO,
             M_GEMINI_LITE,
-            M_QWEN_PLUS,
-            M_GEMMA_27B,
-            M_MISTRAL_7B,
-            "google/gemini-2.0-pro-exp-02-05:free"
+            M_QWEN_TURBO,
+            "google/gemma-3-27b-it:free",
+            M_MISTRAL_7B
         ]
 
     last_detail = ""
