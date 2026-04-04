@@ -27,12 +27,17 @@ print(f"--- SERVER STARTING: BASE_DIR={BASE_DIR} ---")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # المفتاح الأساسي (يُفضّل تعيين OPENROUTER_API_KEY في البيئة بدل تثبيته في الكود)
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-if not OPENROUTER_API_KEY or OPENROUTER_API_KEY.strip() == "":
-    OPENROUTER_API_KEY = "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"
-OPENROUTER_API_KEY = OPENROUTER_API_KEY.strip(' "\'')
+# تنظيف المفتاح البرمجي بشكل فائق لضمان عمله في Render
+raw_key = os.environ.get("OPENROUTER_API_KEY") or "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"
+# حذف أي مسافات، علامات تنصيص فردية أو زوجية قد تأتي من إعدادات البيئة
+OPENROUTER_API_KEY = raw_key.strip().strip('"').strip("'").strip()
 
-OPENROUTER_SITE_URL = os.environ.get("OPENROUTER_SITE_URL", "http://localhost:8000")
+if len(OPENROUTER_API_KEY) < 10:
+    print("--- WARNING: OPENROUTER_API_KEY LOOKS INVALID OR TOO SHORT ---")
+else:
+    print(f"--- API KEY LOADED (Prefix: {OPENROUTER_API_KEY[:10]}...) ---")
+
+OPENROUTER_SITE_URL = os.environ.get("OPENROUTER_SITE_URL", "https://chat-ai-w1u4.onrender.com")
 OPENROUTER_SITE_NAME = os.environ.get("OPENROUTER_SITE_NAME", "AI Chat")
 
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "dev-change-me-for-production")
@@ -153,27 +158,24 @@ def init_db():
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     cur = conn.cursor()
-    cur.execute(
-        """
+    
+    # 1. إنشاء الجداول الأساسية
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
-        """
-    )
-    cur.execute(
-        """
+    """)
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS models (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             provider_id TEXT UNIQUE NOT NULL
         )
-        """
-    )
-    cur.execute(
-        """
+    """)
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS conversations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL DEFAULT 'محادثة جديدة',
@@ -184,10 +186,8 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(id),
             FOREIGN KEY (model_db_id) REFERENCES models(id)
         )
-        """
-    )
-    cur.execute(
-        """
+    """)
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             conversation_id INTEGER NOT NULL,
@@ -197,35 +197,27 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
         )
-        """
-    )
-    
-    # ترقية قاعدة البيانات الحالية إذا لم تكن تحتوي على عمود image_url
-    try:
-        cur.execute("ALTER TABLE messages ADD COLUMN image_url TEXT")
-    except sqlite3.OperationalError:
-        # العمود موجود مسبقاً، نتجاهل الخطأ
-        pass
-        
-    cur.execute(
-        """
+    """)
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS account_profiles (
             user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
             name TEXT NOT NULL DEFAULT '',
             context TEXT NOT NULL DEFAULT '',
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
-        """
-    )
+    """)
     
-    # ترقية قاعدة البيانات الحالية إذا لم تكن تحتوي على عمود image_url
+    # 2. ترقية قاعدة البيانات (Migrations)
+    # التأكد من وجود عمود image_url في جدول messages
     cur.execute("PRAGMA table_info(messages)")
-    columns = [row['name'] for row in cur.fetchall()]
-    if "image_url" not in columns:
+    cols = [r['name'] for r in cur.fetchall()]
+    if "image_url" not in cols:
+        print("--- DB UPGRADE: Adding image_url to messages ---")
         cur.execute("ALTER TABLE messages ADD COLUMN image_url TEXT")
         
     conn.commit()
     conn.close()
+    print("--- DATABASE INITIALIZED & UPGRADED ---")
 
 
 # --- Pydantic models ---
