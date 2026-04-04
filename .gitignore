@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*,cover
+.hypothesis/
+.pytest_cache/
+.env
+.venv
+instance/
+.web_app_checkpoints/
+claude-code-sourcemap/
+# Optional: We usually ignore databases in Git, but for now we'll keep it out of ignore if you want to push it. 
+# For safety, let's keep it in the first push.
