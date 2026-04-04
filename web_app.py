@@ -196,9 +196,17 @@ ALLOWED_UPLOAD = re.compile(r"\.(png|jpe?g|gif|webp|pdf|txt|csv|md)$", re.I)
 MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 
 
+def get_db_connection():
+    # إضافة timeout للسماح للقاعدة بالانتظار في حال وجود ضغط
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     cur = conn.cursor()
+    cur.execute("PRAGMA journal_mode=WAL")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -476,16 +484,24 @@ def create_conversation(user_id: int, title: str = "محادثة جديدة", mo
     return cid
 
 
-def add_message(conversation_id: int, role: str, content: str):
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)",
-        (conversation_id, role, content),
-    )
-    cur.execute("UPDATE conversations SET updated_at = datetime('now') WHERE id = ?", (conversation_id,))
-    conn.commit()
-    conn.close()
+def add_message(conversation_id, role, content, image_url=None):
+    if conversation_id is None:
+        print(f"--- DB ERROR: ATTEMPTED TO ADD MESSAGE TO NULL CONVERSATION (Role: {role}) ---")
+        return None
+    
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO messages (conversation_id, role, content, image_url) VALUES (?, ?, ?, ?)",
+            (conversation_id, role, content, image_url),
+        )
+        cur.execute("UPDATE conversations SET updated_at = datetime('now') WHERE id = ?", (conversation_id,))
+        conn.commit()
+    except Exception as e:
+        print(f"--- DB ERROR IN add_message: {e} ---")
+    finally:
+        conn.close()
 
 
 def update_conversation_title(conv_id: int, title: str):
@@ -751,19 +767,33 @@ async def api_upload(request: Request, file: UploadFile = File(...)):
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(request: Request, req: ChatRequest):
-    uid = get_session_user_id(request)
-    has_img = bool(req.attachments)
+async def chat(request: Request, data: ChatRequest):
+    user_id = get_session_user_id(request)
+    if not user_id:
+        print("--- CHAT ERROR: UNAUTHORIZED ACCESS ATTEMPT ---")
+        raise HTTPException(status_code=401, detail="يرجى تسجيل الدخول أولاً")
+
+    # تحديد أو إنشاء المحادثة
+    conversation_id = data.conversation_id
+    if not conversation_id:
+        try:
+            conversation_id = create_conversation(user_id)
+            print(f"--- CREATED NEW CONVERSATION: {conversation_id} ---")
+        except Exception as e:
+            print(f"--- ERROR CREATING CONVERSATION: {e} ---")
+            raise HTTPException(status_code=500, detail="فشل في إنشاء محادثة جديدة")
+
+    has_img = bool(data.attachments)
     existing_msgs: List[MessageOut] = []
 
-    if uid and req.conversation_id:
-        conv, existing_msgs = get_conversation_with_messages(req.conversation_id, uid)
+    if user_id and conversation_id:
+        conv, existing_msgs = get_conversation_with_messages(conversation_id, user_id)
         if conv is None:
             raise HTTPException(status_code=404, detail="المحادثة غير موجودة")
 
     hist_txt = ""
-    if req.history:
-        hist_txt += " ".join(str(h.get("content", "")) for h in req.history[-12:] if h.get("role") == "user")
+    if data.history:
+        hist_txt += " ".join(str(h.get("content", "")) for h in data.history[-12:] if h.get("role") == "user")
     if existing_msgs:
         hist_txt += " " + " ".join((m.content[:800] for m in existing_msgs if m.role == "user"))
 
