@@ -143,50 +143,67 @@ def complete_chat_with_fallback(messages: List[Dict[str, Any]], primary_model: s
     # محرك احترافي لاختيار النماذج مع دعم الطوارئ المتعدد للصور والنصوص.
     seen = set()
     
-    # قائمة موديلات احترافية كطوارئ
+    # تحصين قائمة الطوارئ بموديلات قوية وموثوقة (تدعم العربية)
     if has_img:
-        # موديلات تدعم الصور مجانية
+        # موديلات رؤية (Vision) مجانية
         order = [
             primary_model,
+            "google/gemini-2.0-flash-lite-preview-02-05:free",
             "google/gemini-2.0-pro-exp-02-05:free",
             "qwen/qwen-vl-plus:free",
             "nvidia/nemotron-nano-12b-v2-vl:free",
         ]
     else:
-        # موديلات نصوص
+        # موديلات نصوص (Text) مجانية واسعة النطاق
         order = [
             primary_model,
-            M_QWEN,
-            M_GEMMA_27,
             "google/gemini-2.0-flash-lite-preview-02-05:free",
+            "qwen/qwen3.6-plus:free",
+            "google/gemma-3-27b-it:free",
+            "google/gemma-3-12b-it:free",
+            "qwen/qwen-2-72b-instruct",
+            "mistralai/mistral-7b-instruct:free",
         ]
 
     last_detail = ""
     for mid in order:
-        if mid in seen:
+        if not mid or mid in seen:
             continue
         seen.add(mid)
+        # طباعة الموديل الحالي للتصحيح في السجلات
+        print(f"--- ATTEMPTING CHAT WITH MODEL: {mid} ---")
         try:
             resp = call_openrouter_chat(messages, mid)
         except Exception as e:
-            last_detail = str(e)
+            last_detail = f"Exception with {mid}: {e}"
+            print(f"--- FAILURE WITH {mid}: {last_detail} ---")
             continue
             
         if resp.status_code == 200:
             j = resp.json()
             try:
-                return j["choices"][0]["message"]["content"]
+                content = j["choices"][0]["message"]["content"]
+                if content and content.strip():
+                    return content
+                last_detail = f"Empty response from {mid}"
             except Exception:
-                last_detail = f"استجابة غير صالحة من {mid}"
-                continue
+                last_detail = f"Invalid JSON format from {mid}"
+            print(f"--- FAILURE WITH {mid}: {last_detail} ---")
+            continue
                 
+        # تحليل الخطأ لمعرفة السبب والانتقال فوراً للموديل التالي
         try:
             err = resp.json()
-            last_detail = f"[{mid}] " + str(err.get("error", err))[:300]
+            last_detail = f"[{mid}] HTTP {resp.status_code}: " + str(err.get("error", err))[:300]
         except Exception:
             last_detail = f"[{mid}] HTTP {resp.status_code}: {resp.text[:200]}"
             
-    # إذا فشلت كل الموديلات بسبب زحام (Too Many Requests) أو خطأ آخر
+        print(f"--- FAILURE WITH {mid}: {last_detail} ---")
+        # إذا كان الخطأ 401 (Authentication) أو 429 (Too many requests) أو 500+، لا تظهر الخطأ للمستحدم، بل جرب التالي
+        if resp.status_code in [401, 403, 429, 500, 502, 503]:
+            continue
+            
+    # إذا فشلت كل الموديلات في الدورة
     return (
         "عذراً، أواجه ضغطاً كبيراً في الطلبات (Too Many Requests) أو هناك عطل مؤقت في الخوادم ولا يمكنني الرد حالياً.\n\n"
         "يرجى المحاولة بعد قليل. شكراً لتفهمك.\n\n"
