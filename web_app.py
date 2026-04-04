@@ -53,7 +53,7 @@ M_NANO_VL = "google/gemini-2.0-flash-lite-preview-02-05:free"
 
 
 def select_openrouter_model(message: str, has_image_attachments: bool, history_text: str) -> str:
-    """يختار موديل OpenRouter حسب نص الطلب والمرفقات (بدون عرض للمستخدم)."""
+    # يختار موديل OpenRouter حسب نص الطلب والمرفقات (بدون عرض للمستخدم).
     if has_image_attachments:
         return M_NANO_VL
     combined = f"{history_text[-4000:]} {message}".strip()
@@ -139,7 +139,7 @@ def call_openrouter_chat(messages: List[Dict[str, Any]], model_id: str) -> reque
 
 
 def complete_chat_with_fallback(messages: List[Dict[str, Any]], primary_model: str, has_img: bool = False) -> str:
-    """محرك احترافي لاختيار النماذج مع دعم الطوارئ المتعدد للصور والنصوص."""
+    # محرك احترافي لاختيار النماذج مع دعم الطوارئ المتعدد للصور والنصوص.
     seen = set()
     
     # قائمة موديلات احترافية كطوارئ
@@ -205,8 +205,10 @@ def get_db_connection():
 
 def init_db():
     conn = get_db_connection()
+    # تفعيل وضع WAL للسماح بعمليات متزامنة بكفاءة عالية
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     cur = conn.cursor()
-    cur.execute("PRAGMA journal_mode=WAL")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -247,6 +249,7 @@ def init_db():
             conversation_id INTEGER NOT NULL,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
+            image_url TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
         )
@@ -254,8 +257,14 @@ def init_db():
     )
     cur.execute(
         """
-        CREATE TABLE IF NOT EXISTS user_profile (
-    # تم حذف البيانات الافتراضية لضمان الخصوصية
+        CREATE TABLE IF NOT EXISTS account_profiles (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            name TEXT NOT NULL DEFAULT '',
+            context TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
     conn.commit()
     conn.close()
 
@@ -509,7 +518,7 @@ def store_user_content(text: str, attachments: Optional[List[Dict[str, str]]]) -
 
 
 def ensure_data_uri(url: str) -> str:
-    """تحويل روابط الصور المحلية إلى Base64 ليتمكن OpenRouter من قراءتها."""
+    # تحويل روابط الصور المحلية إلى Base64 ليتمكن OpenRouter من قراءتها.
     if not url.startswith("http") or "/uploads/" not in url:
         return url
     try:
@@ -796,8 +805,6 @@ async def chat(request: Request, data: ChatRequest):
     if not data.conversation_id:
         title = (data.message[:50] + "…") if len(data.message) > 50 else data.message
         title = title.replace("\n", " ").strip() or "محادثة جديدة"
-        if has_img:
-            title = "📎 " + title
         update_conversation_title(conversation_id, title)
 
     return ChatResponse(reply=reply, conversation_id=conversation_id)
