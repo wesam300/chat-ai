@@ -219,44 +219,27 @@ def init_db():
     )
     cur.execute(
         """
-        CREATE TABLE IF NOT EXISTS account_profiles (
-            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-            name TEXT NOT NULL DEFAULT '',
-            context TEXT NOT NULL DEFAULT '',
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        CREATE TABLE IF NOT EXISTS models (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            provider_id TEXT UNIQUE NOT NULL
         )
         """
     )
     cur.execute(
         """
-        CREATE TABLE IF NOT EXISTS models (
+        CREATE TABLE IF NOT EXISTS conversations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            display_name TEXT NOT NULL,
-            model_id TEXT NOT NULL,
-            api_key TEXT NOT NULL
+            title TEXT NOT NULL DEFAULT 'محادثة جديدة',
+            model_db_id INTEGER,
+            user_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            FOREIGN KEY (model_db_id) REFERENCES models(id)
         )
         """
     )
-    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='conversations'")
-    if cur.fetchone():
-        cur.execute("PRAGMA table_info(conversations)")
-        cols = [r[1] for r in cur.fetchall()]
-        if "user_id" not in cols:
-            cur.execute("ALTER TABLE conversations ADD COLUMN user_id INTEGER REFERENCES users(id)")
-    else:
-        cur.execute(
-            """
-            CREATE TABLE conversations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL DEFAULT 'محادثة جديدة',
-                model_db_id INTEGER,
-                user_id INTEGER REFERENCES users(id),
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-                FOREIGN KEY (model_db_id) REFERENCES models(id)
-            )
-            """
-        )
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS messages (
@@ -272,14 +255,7 @@ def init_db():
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS user_profile (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            name TEXT NOT NULL DEFAULT '',
-            context TEXT NOT NULL DEFAULT '',
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-        """
-    )
-    cur.execute("INSERT OR IGNORE INTO user_profile (id, name, context) VALUES (1, '', '')")
+    # تم حذف البيانات الافتراضية لضمان الخصوصية
     conn.commit()
     conn.close()
 
@@ -711,14 +687,7 @@ def api_get_user_profile(request: Request):
     uid = get_session_user_id(request)
     if uid:
         return get_account_profile(uid)
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("SELECT name, context FROM user_profile WHERE id = 1")
-    row = cur.fetchone()
-    conn.close()
-    if not row:
-        return UserProfileOut(name="", context="")
-    return UserProfileOut(name=row[0] or "", context=row[1] or "")
+    return UserProfileOut(name="", context="")
 
 
 @app.patch("/api/user-profile", response_model=UserProfileOut)
@@ -727,20 +696,7 @@ def api_update_user_profile(request: Request, data: UserProfileUpdate):
     if uid:
         update_account_profile(uid, data.name, data.context)
         return get_account_profile(uid)
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE user_profile SET name = ?, context = ?, updated_at = datetime('now') WHERE id = 1",
-        (data.name.strip(), data.context.strip()),
-    )
-    conn.commit()
-    conn.close()
-    conn2 = sqlite3.connect(DB_PATH)
-    c2 = conn2.cursor()
-    c2.execute("SELECT name, context FROM user_profile WHERE id = 1")
-    row = c2.fetchone()
-    conn2.close()
-    return UserProfileOut(name=row[0] or "", context=row[1] or "")
+    return UserProfileOut(name="", context="")
 
 
 # --- Upload ---
@@ -783,95 +739,66 @@ async def chat(request: Request, data: ChatRequest):
             print(f"--- ERROR CREATING CONVERSATION: {e} ---")
             raise HTTPException(status_code=500, detail="فشل في إنشاء محادثة جديدة")
 
+    # جلب المحادثة للتأكد من ملكيتها
+    conv, existing_msgs = get_conversation_with_messages(conversation_id, user_id)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="المحادثة غير موجودة أو لا تملك صلاحية الوصول")
+
     has_img = bool(data.attachments)
-    existing_msgs: List[MessageOut] = []
-
-    if user_id and conversation_id:
-        conv, existing_msgs = get_conversation_with_messages(conversation_id, user_id)
-        if conv is None:
-            raise HTTPException(status_code=404, detail="المحادثة غير موجودة")
-
+    
+    # بناء سياق الدردشة
     hist_txt = ""
     if data.history:
         hist_txt += " ".join(str(h.get("content", "")) for h in data.history[-12:] if h.get("role") == "user")
     if existing_msgs:
         hist_txt += " " + " ".join((m.content[:800] for m in existing_msgs if m.role == "user"))
 
-    primary_model = select_openrouter_model(req.message or "", has_img, hist_txt)
+    primary_model = select_openrouter_model(data.message or "", has_img, hist_txt)
 
     messages_for_api: List[Dict[str, Any]] = []
 
-    # أوامر نظامية قوية لضمان الرد بالعربية ومنع الهلوسة
+    # أوامر نظامية للرد بالعربية
     base_system_prompt = (
         "أنت مساعد ذكاء اصطناعي متقدم وذكي جداً. "
         "يجب عليك دائماً الرد باللغة العربية الواضحة والسليمة، إلا إذا طلب منك المستخدم غير ذلك. "
-        "تجنب تكرار الكلام، وكن دقيقاً واحترافياً. "
-        "عند تحليل الصور، صف ما تراه بدقة وبلغة عربية مفهومة دون خلط لغات أو رموز غريبة."
+        "تجنب تكرار الكلام، وكن دقيقاً واحترافياً."
     )
 
-    if uid:
-        profile = get_account_profile(uid)
-        if profile.name.strip() or profile.context.strip():
-            parts = []
-            if profile.name.strip():
-                parts.append(f"المستخدم الذي تتحدث معه اسمه: {profile.name.strip()}.")
-            if profile.context.strip():
-                parts.append(f"معلومات عنه/عنها: {profile.context.strip()}")
-            if parts:
-                messages_for_api.append(
-                    {"role": "system", "content": base_system_prompt + " " + " ".join(parts) + " خاطبه باسمه عند الحاجة."}
-                )
-            else:
-                messages_for_api.append({"role": "system", "content": base_system_prompt})
-        else:
-            messages_for_api.append({"role": "system", "content": base_system_prompt})
+    profile = get_account_profile(user_id)
+    if profile.name.strip() or profile.context.strip():
+        parts = []
+        if profile.name.strip():
+            parts.append(f"المستخدم الذي تتحدث معه اسمه: {profile.name.strip()}.")
+        if profile.context.strip():
+            parts.append(f"معلومات عنه/عنها: {profile.context.strip()}")
+        messages_for_api.append(
+            {"role": "system", "content": f"{base_system_prompt} { ' '.join(parts) } خاطبه باسمه عند الحاجة."}
+        )
     else:
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        cur.execute("SELECT name, context FROM user_profile WHERE id = 1")
-        prow = cur.fetchone()
-        conn.close()
-        if prow and (prow[0] or "").strip() or (prow[1] or "").strip():
-            pp = []
-            if (prow[0] or "").strip():
-                pp.append(f"المستخدم الذي تتحدث معه اسمه: {(prow[0] or '').strip()}.")
-            if (prow[1] or "").strip():
-                pp.append(f"معلومات عنه/عنها: {(prow[1] or '').strip()}")
-            if pp:
-                messages_for_api.append({"role": "system", "content": base_system_prompt + " " + " ".join(pp)})
-            else:
-                messages_for_api.append({"role": "system", "content": base_system_prompt})
-        else:
-            messages_for_api.append({"role": "system", "content": base_system_prompt})
+        messages_for_api.append({"role": "system", "content": base_system_prompt})
 
-    user_body = build_fresh_user_content(req.message, req.attachments)
+    # إضافة الرسائل السابقة والحالية
+    for m in existing_msgs:
+        messages_for_api.append({"role": m.role, "content": content_to_api_format(m.content)})
+    
+    user_body = build_fresh_user_content(data.message, data.attachments)
+    messages_for_api.append({"role": "user", "content": user_body})
 
-    if uid and req.conversation_id:
-        for m in existing_msgs:
-            messages_for_api.append({"role": m.role, "content": content_to_api_format(m.content)})
-        messages_for_api.append({"role": "user", "content": user_body})
-        conversation_id = req.conversation_id
-    elif uid and not req.conversation_id:
-        conversation_id = create_conversation(uid, title="محادثة جديدة", model_db_id=None)
-        messages_for_api.append({"role": "user", "content": user_body})
-        title = (req.message[:50] + "…") if len(req.message) > 50 else req.message
-        title = title.replace("\n", " ").strip() or "محادثة جديدة"
-        if not req.attachments:
-            update_conversation_title(conversation_id, title)
-        else:
-            update_conversation_title(conversation_id, "📎 " + title)
-    else:
-        conversation_id = None
-        for h in req.history or []:
-            messages_for_api.append(history_item_to_api(h))
-        messages_for_api.append({"role": "user", "content": user_body})
-
+    # الحصول على رد الذكاء الاصطناعي
     reply = complete_chat_with_fallback(messages_for_api, primary_model, has_img)
 
-    if uid and conversation_id:
-        ustore = store_user_content(req.message, req.attachments)
-        add_message(conversation_id, "user", ustore)
+    # حفظ الرسائل في القاعدة
+    ustore = store_user_content(data.message, data.attachments)
+    add_message(conversation_id, "user", ustore)
     add_message(conversation_id, "assistant", reply)
+
+    # تحديث عنوان المحادثة تلقائياً إذا كانت جديدة
+    if not data.conversation_id:
+        title = (data.message[:50] + "…") if len(data.message) > 50 else data.message
+        title = title.replace("\n", " ").strip() or "محادثة جديدة"
+        if has_img:
+            title = "📎 " + title
+        update_conversation_title(conversation_id, title)
 
     return ChatResponse(reply=reply, conversation_id=conversation_id)
 
