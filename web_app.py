@@ -265,6 +265,13 @@ def init_db():
         )
         """
     )
+    
+    # ترقية قاعدة البيانات الحالية إذا لم تكن تحتوي على عمود image_url
+    cur.execute("PRAGMA table_info(messages)")
+    columns = [row['name'] for row in cur.fetchall()]
+    if "image_url" not in columns:
+        cur.execute("ALTER TABLE messages ADD COLUMN image_url TEXT")
+        
     conn.commit()
     conn.close()
 
