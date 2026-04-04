@@ -28,7 +28,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 # المفتاح الأساسي (يُفضّل تعيين OPENROUTER_API_KEY في البيئة بدل تثبيته في الكود)
 # تنظيف المفتاح البرمجي بشكل فائق لضمان عمله في Render
-raw_key = os.environ.get("OPENROUTER_API_KEY") or "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"
+raw_key = os.environ.get("OPENROUTER_API_KEY") or "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"
 # حذف أي مسافات، علامات تنصيص فردية أو زوجية قد تأتي من إعدادات البيئة
 OPENROUTER_API_KEY = raw_key.strip().strip('"').strip("'").strip()
 
