@@ -26,15 +26,11 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 print(f"--- SERVER STARTING: BASE_DIR={BASE_DIR} ---")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# المفتاح الأساسي (تمت إعادته بداخل الملف بناءً على طلبك)
+# المفتاح الأساسي (يُفضّل تعيين OPENROUTER_API_KEY في البيئة بدل تثبيته في الكود)
+# تنظيف المفتاح البرمجي بشكل فائق لضمان عمله في Render
 raw_key = os.environ.get("OPENROUTER_API_KEY") or "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"
-# تنظيف المفتاح البرمجي لضمان عدم وجود مسافات أو علامات تنصيص زائدة
+# حذف أي مسافات، علامات تنصيص فردية أو زوجية قد تأتي من إعدادات البيئة
 OPENROUTER_API_KEY = raw_key.strip().strip('"').strip("'").strip()
-
-if not OPENROUTER_API_KEY:
-    print("--- WARNING: OPENROUTER_API_KEY IS MISSING! ---")
-else:
-    print(f"--- API KEY LOADED FROM FILE (Prefix: {OPENROUTER_API_KEY[:6]}...) ---")
 
 if len(OPENROUTER_API_KEY) < 10:
     print("--- WARNING: OPENROUTER_API_KEY LOOKS INVALID OR TOO SHORT ---")
