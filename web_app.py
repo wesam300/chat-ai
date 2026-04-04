@@ -27,10 +27,11 @@ print(f"--- SERVER STARTING: BASE_DIR={BASE_DIR} ---")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # المفتاح الأساسي (يُفضّل تعيين OPENROUTER_API_KEY في البيئة بدل تثبيته في الكود)
-OPENROUTER_API_KEY = os.environ.get(
-    "OPENROUTER_API_KEY",
-    "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",
-)
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+if not OPENROUTER_API_KEY or OPENROUTER_API_KEY.strip() == "":
+    OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = OPENROUTER_API_KEY.strip(' "\'')
+
 OPENROUTER_SITE_URL = os.environ.get("OPENROUTER_SITE_URL", "http://localhost:8000")
 OPENROUTER_SITE_NAME = os.environ.get("OPENROUTER_SITE_NAME", "AI Chat")
 
@@ -255,6 +256,14 @@ def init_db():
         )
         """
     )
+    
+    # ترقية قاعدة البيانات الحالية إذا لم تكن تحتوي على عمود image_url
+    try:
+        cur.execute("ALTER TABLE messages ADD COLUMN image_url TEXT")
+    except sqlite3.OperationalError:
+        # العمود موجود مسبقاً، نتجاهل الخطأ
+        pass
+        
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS account_profiles (
