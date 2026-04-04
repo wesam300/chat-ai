@@ -37,20 +37,13 @@ OPENROUTER_SITE_NAME = os.environ.get("OPENROUTER_SITE_NAME", "AI Chat")
 
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "dev-change-me-for-production")
 
-# مجموعة الموديلات للاختيار الداخلي فقط (لا تُعرض للمستخدم)
-M_QWEN = "qwen/qwen3.6-plus:free"
-M_LYRIA_PRO = "google/lyria-3-pro-preview"
-M_LYRIA_CLIP = "google/lyria-3-clip-preview"
-M_WAN = "alibaba/wan-2.6"
-M_VEO = "google/veo-3.1"
-M_EMBED = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
-M_RIVER = "sourceful/riverflow-v2-pro"
-M_GEMMA_4 = "google/gemma-3-4b-it:free"
-M_GEMMA_12 = "google/gemma-3-12b-it:free"
-M_GEMMA_27 = "google/gemma-3-27b-it:free"
-
-# ترقية الموديل المسؤول عن الصور ليكون أذكى بكثير ويدعم العربية جيداً
-M_NANO_VL = "google/gemini-2.0-flash-lite-preview-02-05:free"
+# قائمة الموديلات المجانية والموثوقة (تدعم العربية)
+M_QWEN_PRO = "qwen/qwen-2.5-72b-instruct"  # القوي والجديد
+M_QWEN_PLUS = "qwen/qwen-turbo"            # السريع والمجاني
+M_GEMINI_LITE = "google/gemini-2.0-flash-lite-preview-02-05:free"
+M_GEMINI_PRO = "google/gemini-pro-1.5-exp:free"
+M_MISTRAL_7B = "mistralai/mistral-7b-instruct:free"
+M_GEMMA_27B = "google/gemma-3-27b-it:free"
 
 
 def select_openrouter_model(message: str, has_image_attachments: bool, history_text: str) -> str:
@@ -140,29 +133,21 @@ def call_openrouter_chat(messages: List[Dict[str, Any]], model_id: str) -> reque
 
 
 def complete_chat_with_fallback(messages: List[Dict[str, Any]], primary_model: str, has_img: bool = False) -> str:
-    # محرك احترافي لاختيار النماذج مع دعم الطوارئ المتعدد للصور والنصوص.
+    # محرك "البدائل اللانهائية" لضمان الاستمرارية
     seen = set()
     
-    # تحصين قائمة الطوارئ بموديلات قوية وموثوقة (تدعم العربية)
+    # بناء القائمة الذهبية للبدائل
     if has_img:
-        # موديلات رؤية (Vision) مجانية
-        order = [
-            primary_model,
-            "google/gemini-2.0-flash-lite-preview-02-05:free",
-            "google/gemini-2.0-pro-exp-02-05:free",
-            "qwen/qwen-vl-plus:free",
-            "nvidia/nemotron-nano-12b-v2-vl:free",
-        ]
+        order = [primary_model, M_GEMINI_LITE, M_GEMINI_PRO, "qwen/qwen-vl-plus:free"]
     else:
-        # موديلات نصوص (Text) مجانية واسعة النطاق
         order = [
             primary_model,
-            "google/gemini-2.0-flash-lite-preview-02-05:free",
-            "qwen/qwen3.6-plus:free",
-            "google/gemma-3-27b-it:free",
-            "google/gemma-3-12b-it:free",
-            "qwen/qwen-2-72b-instruct",
-            "mistralai/mistral-7b-instruct:free",
+            M_QWEN_PRO,
+            M_GEMINI_LITE,
+            M_QWEN_PLUS,
+            M_GEMMA_27B,
+            M_MISTRAL_7B,
+            "google/gemini-2.0-pro-exp-02-05:free"
         ]
 
     last_detail = ""
@@ -170,13 +155,12 @@ def complete_chat_with_fallback(messages: List[Dict[str, Any]], primary_model: s
         if not mid or mid in seen:
             continue
         seen.add(mid)
-        # طباعة الموديل الحالي للتصحيح في السجلات
-        print(f"--- ATTEMPTING CHAT WITH MODEL: {mid} ---")
+        print(f"--- ATTEMPTING WITH MODEL: {mid} ---")
         try:
             resp = call_openrouter_chat(messages, mid)
         except Exception as e:
-            last_detail = f"Exception with {mid}: {e}"
-            print(f"--- FAILURE WITH {mid}: {last_detail} ---")
+            last_detail = f"Exception {mid}: {e}"
+            print(f"--- FAILED {mid}: {last_detail} ---")
             continue
             
         if resp.status_code == 200:
@@ -185,29 +169,27 @@ def complete_chat_with_fallback(messages: List[Dict[str, Any]], primary_model: s
                 content = j["choices"][0]["message"]["content"]
                 if content and content.strip():
                     return content
-                last_detail = f"Empty response from {mid}"
+                last_detail = f"Empty reply from {mid}"
             except Exception:
-                last_detail = f"Invalid JSON format from {mid}"
-            print(f"--- FAILURE WITH {mid}: {last_detail} ---")
+                last_detail = f"JSON error from {mid}"
+            print(f"--- FAILED {mid}: {last_detail} ---")
             continue
                 
-        # تحليل الخطأ لمعرفة السبب والانتقال فوراً للموديل التالي
+        # تحليل الخطأ (401، 429، إلخ) للانتقال الفوري
         try:
             err = resp.json()
-            last_detail = f"[{mid}] HTTP {resp.status_code}: " + str(err.get("error", err))[:300]
+            last_detail = f"[{mid}] {resp.status_code}: " + str(err.get("error", err))[:200]
         except Exception:
-            last_detail = f"[{mid}] HTTP {resp.status_code}: {resp.text[:200]}"
+            last_detail = f"[{mid}] HTTP {resp.status_code}"
             
-        print(f"--- FAILURE WITH {mid}: {last_detail} ---")
-        # إذا كان الخطأ 401 (Authentication) أو 429 (Too many requests) أو 500+، لا تظهر الخطأ للمستحدم، بل جرب التالي
-        if resp.status_code in [401, 403, 429, 500, 502, 503]:
-            continue
+        print(f"--- FAILED {mid}: {last_detail} ---")
+        # لا تتوقف، جرب البديل التالي فوراً
+        continue
             
-    # إذا فشلت كل الموديلات في الدورة
     return (
-        "عذراً، أواجه ضغطاً كبيراً في الطلبات (Too Many Requests) أو هناك عطل مؤقت في الخوادم ولا يمكنني الرد حالياً.\n\n"
-        "يرجى المحاولة بعد قليل. شكراً لتفهمك.\n\n"
-        f"*(تفاصيل تقنية للتصحيح: {last_detail})*"
+        "عذراً، جميع خوادم الذكاء الاصطناعي المتاحة تواجه ضغطاً غير مسبوق حالياً.\n\n"
+        "يرجى المحاولة مجدداً بعد دقيقة واحدة. شكراً لصبرك.\n\n"
+        f"*(ملاحظة للمطور: {last_detail})*"
     )
 
 ALLOWED_UPLOAD = re.compile(r"\.(png|jpe?g|gif|webp|pdf|txt|csv|md)$", re.I)
