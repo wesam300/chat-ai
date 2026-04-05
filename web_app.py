@@ -29,7 +29,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 # المفتاح الأساسي (يُفضّل تعيين OPENROUTER_API_KEY في البيئة بدل تثبيته في الكود)
 # تنظيف المفتاح البرمجي بشكل فائق لضمان عمله في Render
-raw_key = os.environ.get("OPENROUTER_API_KEY") or "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"
+raw_key = os.environ.get("OPENROUTER_API_KEY") or "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"
 # حذف أي مسافات، علامات تنصيص فردية أو زوجية قد تأتي من إعدادات البيئة
 OPENROUTER_API_KEY = raw_key.strip().strip('"').strip("'").strip()
 
@@ -43,20 +43,18 @@ OPENROUTER_SITE_NAME = os.environ.get("OPENROUTER_SITE_NAME", "AI Chat")
 
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "dev-change-me-for-production")
 
-# قائمة الموديلات المجانية والموثوقة (تدعم العربية)
-M_QWEN_36 = "qwen/qwen3.6-plus:free"       # الموديل الذي طلبته (قوي ومجاني)
-M_QWEN_PRO = "qwen/qwen-2.5-72b-instruct"  # البديل القوي
+# قائمة الموديلات المجانية فقط (ضمان عدم وجود رسوم)
 M_GEMINI_LITE = "google/gemini-2.0-flash-lite-preview-02-05:free"
-M_GEMINI_PRO = "google/gemini-pro-1.5-exp:free"
-M_QWEN_TURBO = "qwen/qwen-turbo"
 M_MISTRAL_7B = "mistralai/mistral-7b-instruct:free"
+M_LLAMA_32 = "meta-llama/llama-3.2-3b-instruct:free"
+M_GEMINI_LITE_THINK = "google/gemini-2.0-flash-thinking-exp-1219:free"
 
 
 def select_openrouter_model(message: str, has_image_attachments: bool, history_text: str) -> str:
-    # يختار الموديل المفضل (افتراضياً Qwen 3.6 Plus كما طلبت)
+    # استخدام الموديلات المجانية فقط
     if has_image_attachments:
         return M_GEMINI_LITE
-    return M_QWEN_36
+    return M_GEMINI_LITE_THINK
 
 
 def openrouter_headers() -> Dict[str, str]:
@@ -839,13 +837,12 @@ async def chat(request: Request, data: ChatRequest):
         headers = openrouter_headers()
         url = "https://openrouter.ai/api/v1/chat/completions"
         
-        # قائمة بدائل ذكية ومجانية تضمن عدم سقوط الخدمة أبداً
+        # قائمة بدائل مجانية تماماً بنسبة 100%
         candidate_models = [
             primary_model,
-            "google/gemini-2.0-flash-lite-preview-02-05:free",
-            "google/gemini-2.0-pro-exp-02-05:free",
-            "mistralai/mistral-7b-instruct:free",
-            "meta-llama/llama-3.2-3b-instruct:free"
+            M_GEMINI_LITE,
+            M_MISTRAL_7B,
+            M_LLAMA_32
         ]
         
         # إزالة التكرار مع الحفاظ على الترتيب
