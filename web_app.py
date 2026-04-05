@@ -13,7 +13,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import requests
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
+import httpx
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
@@ -214,7 +215,15 @@ def init_db():
     if "image_url" not in cols:
         print("--- DB UPGRADE: Adding image_url to messages ---")
         cur.execute("ALTER TABLE messages ADD COLUMN image_url TEXT")
-        
+    
+    # التأكد من وجود عمود email في جدول users (للتوافق مع جوجل)
+    cur.execute("PRAGMA table_info(users)")
+    user_cols = [r['name'] for r in cur.fetchall()]
+    if "email" not in user_cols:
+        print("--- DB UPGRADE: Adding email to users ---")
+        cur.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_email ON users(email)")
+
     conn.commit()
     conn.close()
     print("--- DATABASE INITIALIZED & UPGRADED ---")
@@ -278,6 +287,19 @@ class LoginBody(BaseModel):
 class UserPublic(BaseModel):
     id: int
     username: str
+    email: Optional[str] = None
+
+class GoogleAuthBody(BaseModel):
+    idToken: str
+    username: Optional[str] = ""
+    email: str
+
+class AdminStats(BaseModel):
+    total_users: int
+    total_conversations: int
+    total_messages: int
+    successful_chats: int
+    failed_chats: int
 
 
 app = FastAPI(title="OpenRouter Web Chat")
@@ -291,6 +313,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+# خدمت ملفات الـ JS والـ CSS من المجلد الرئيسي
+app.mount("/static", StaticFiles(directory=str(BASE_DIR)), name="static")
+# ملاحظة: سنقوم بتعديل الروابط في HTML لتشمل /static/ أو سنقدم حلاً بديلاً للمسارات النسبية
 
 
 # تشغيل تهيئة قاعدة البيانات مباشرة عند تحميل الملف لضمان الجاهزية فوراً
@@ -333,17 +358,22 @@ def create_user(username: str, password: str) -> int:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     ph = hash_password(password)
+    # تنظيف اسم المستخدم
+    uname = username.strip().lower()
+    # إذا كان اسم المستخدم بريداً إلكترونياً، نضعه في عمود الإيميل أيضاً
+    email = uname if "@" in uname else None
+    
     try:
         cur.execute(
-            "INSERT INTO users (username, password_hash) VALUES (?, ?)",
-            (username.strip().lower(), ph),
+            "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
+            (uname, email, ph),
         )
         uid = cur.lastrowid
         cur.execute("INSERT OR IGNORE INTO account_profiles (user_id, name, context) VALUES (?, '', '')", (uid,))
         conn.commit()
     except sqlite3.IntegrityError:
         conn.close()
-        raise HTTPException(status_code=400, detail="اسم المستخدم موجود مسبقاً")
+        raise HTTPException(status_code=400, detail="اسم المستخدم أو البريد موجود مسبقاً")
     conn.close()
     return uid
 
@@ -569,17 +599,56 @@ def api_logout(request: Request):
 @app.get("/api/auth/me")
 def api_me(request: Request):
     uid = get_session_user_id(request)
+    print(f"--- FETCHING SESSION USER: {uid} ---")
     if not uid:
         return {"user": None}
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("SELECT id, username FROM users WHERE id = ?", (uid,))
+    cur.execute("SELECT id, username, email FROM users WHERE id = ?", (uid,))
     row = cur.fetchone()
     conn.close()
     if not row:
         request.session.clear()
         return {"user": None}
-    return {"user": UserPublic(id=row[0], username=row[1])}
+    return {"user": UserPublic(id=row[0], username=row[1], email=row[2])}
+
+@app.post("/api/auth/google")
+async def api_google_auth(request: Request, data: GoogleAuthBody):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    email_clean = data.email.strip().lower()
+    
+    cur.execute("SELECT id FROM users WHERE email = ?", (email_clean,))
+    row = cur.fetchone()
+    
+    if row:
+        uid = row[0]
+    else:
+        # محاولة إنشاء اسم مستخدم فريد
+        base_uname = data.username or email_clean.split('@')[0]
+        uname = base_uname
+        counter = 1
+        while True:
+            try:
+                cur.execute(
+                    "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
+                    (uname, email_clean, "GOOGLE_OAUTH_USER"),
+                )
+                uid = cur.lastrowid
+                break
+            except sqlite3.IntegrityError:
+                uname = f"{base_uname}{counter}"
+                counter += 1
+                if counter > 100: # حماية من الحلقات اللانهائية
+                    raise HTTPException(status_code=500, detail="فشل إنشاء حساب فريد")
+                    
+        cur.execute("INSERT OR IGNORE INTO account_profiles (user_id, name, context) VALUES (?, ?, '')", (uid, data.username or uname))
+    
+    conn.commit()
+    conn.close()
+    request.session["user_id"] = uid
+    print(f"--- GOOGLE LOGIN SUCCESSFUL: UID={uid}, EMAIL={email_clean} ---")
+    return {"ok": True, "uid": uid}
 
 
 # --- Conversations ---
@@ -639,24 +708,49 @@ def delete_conv(request: Request, conv_id: int):
     return {"ok": True}
 
 
-# --- Profile (logged-in only) ---
+# --- Admin Panel API ---
+ADMIN_EMAIL_RESTRICT = "wemu20@gmail.com"
 
-
-@app.get("/api/user-profile", response_model=UserProfileOut)
-def api_get_user_profile(request: Request):
+@app.get("/api/admin/stats", response_model=AdminStats)
+def get_admin_stats(request: Request):
+    # التحقق من صلاحية الأدمن
     uid = get_session_user_id(request)
-    if uid:
-        return get_account_profile(uid)
-    return UserProfileOut(name="", context="")
+    if not uid: raise HTTPException(status_code=401)
+    
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT email FROM users WHERE id = ?", (uid,))
+    email = cur.fetchone()[0]
+    if email != ADMIN_EMAIL_RESTRICT:
+        conn.close()
+        raise HTTPException(status_code=403, detail="غير مسموح لك")
+    
+    cur.execute("SELECT COUNT(*) FROM users")
+    u_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM conversations")
+    c_count = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM messages")
+    m_count = cur.fetchone()[0]
+    conn.close()
+    
+    return AdminStats(
+        total_users=u_count,
+        total_conversations=c_count,
+        total_messages=m_count,
+        successful_chats=m_count, # تمثيلي حالياً
+        failed_chats=0
+    )
 
-
-@app.patch("/api/user-profile", response_model=UserProfileOut)
-def api_update_user_profile(request: Request, data: UserProfileUpdate):
+@app.get("/api/admin/users")
+def get_admin_users(request: Request):
     uid = get_session_user_id(request)
-    if uid:
-        update_account_profile(uid, data.name, data.context)
-        return get_account_profile(uid)
-    return UserProfileOut(name="", context="")
+    if not uid: raise HTTPException(status_code=401)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT id, username, email, created_at FROM users ORDER BY created_at DESC")
+    rows = cur.fetchall()
+    conn.close()
+    return [{"id": r[0], "username": r[1], "email": r[2], "date": r[3]} for r in rows]
 
 
 # --- Upload ---
@@ -682,31 +776,21 @@ async def api_upload(request: Request, file: UploadFile = File(...)):
 # --- Chat ---
 
 
-@app.post("/api/chat", response_model=ChatResponse)
+@app.post("/api/chat")
 async def chat(request: Request, data: ChatRequest):
     user_id = get_session_user_id(request)
     if not user_id:
-        print("--- CHAT ERROR: UNAUTHORIZED ACCESS ATTEMPT ---")
         raise HTTPException(status_code=401, detail="يرجى تسجيل الدخول أولاً")
 
-    # تحديد أو إنشاء المحادثة
     conversation_id = data.conversation_id
     if not conversation_id:
-        try:
-            conversation_id = create_conversation(user_id)
-            print(f"--- CREATED NEW CONVERSATION: {conversation_id} ---")
-        except Exception as e:
-            print(f"--- ERROR CREATING CONVERSATION: {e} ---")
-            raise HTTPException(status_code=500, detail="فشل في إنشاء محادثة جديدة")
+        conversation_id = create_conversation(user_id)
 
-    # جلب المحادثة للتأكد من ملكيتها
     conv, existing_msgs = get_conversation_with_messages(conversation_id, user_id)
     if conv is None:
-        raise HTTPException(status_code=404, detail="المحادثة غير موجودة أو لا تملك صلاحية الوصول")
+        raise HTTPException(status_code=404, detail="المحادثة غير موجودة")
 
     has_img = bool(data.attachments)
-    
-    # بناء سياق الدردشة
     hist_txt = ""
     if data.history:
         hist_txt += " ".join(str(h.get("content", "")) for h in data.history[-12:] if h.get("role") == "user")
@@ -714,43 +798,36 @@ async def chat(request: Request, data: ChatRequest):
         hist_txt += " " + " ".join((m.content[:800] for m in existing_msgs if m.role == "user"))
 
     primary_model = select_openrouter_model(data.message or "", has_img, hist_txt)
-
     messages_for_api: List[Dict[str, Any]] = []
 
-    # أوامر نظامية للرد بالعربية
     base_system_prompt = (
-        "أنت مساعد ذكاء اصطناعي متقدم وذكي جداً. "
-        "يجب عليك دائماً الرد باللغة العربية الواضحة والسليمة، إلا إذا طلب منك المستخدم غير ذلك. "
-        "تجنب تكرار الكلام، وكن دقيقاً واحترافياً."
+        "You are an elite, highly logical, and analytical AI assistant, acting as a Senior Expert Software Engineer. "
+        "Guidelines:\n"
+        "1. NO CHITCHAT: Never use conversational fillers (e.g., 'Hello', 'Here is your code', 'Hope this helps').\n"
+        "2. DIRECT ANSWERS: If asked for code, output ONLY the code enclosed in proper markdown blocks, followed by a concise, highly technical bulleted list of changes if necessary.\n"
+        "3. HIGH QUALITY: Write production-ready, highly optimized, and clean code.\n"
+        "4. LANGUAGE: Always respond in professional Arabic, unless explicitly asked to use English or when writing code syntax.\n"
+        "5. TONE: Professional, objective, direct, and brilliant. Do not flatter the user."
     )
 
     profile = get_account_profile(user_id)
     if profile.name.strip() or profile.context.strip():
         parts = []
-        if profile.name.strip():
-            parts.append(f"المستخدم الذي تتحدث معه اسمه: {profile.name.strip()}.")
-        if profile.context.strip():
-            parts.append(f"معلومات عنه/عنها: {profile.context.strip()}")
-        messages_for_api.append(
-            {"role": "system", "content": f"{base_system_prompt} { ' '.join(parts) } خاطبه باسمه عند الحاجة."}
-        )
+        if profile.name.strip(): parts.append(f"User Name: {profile.name.strip()}.")
+        if profile.context.strip(): parts.append(f"User Context: {profile.context.strip()}")
+        messages_for_api.append({"role": "system", "content": f"{base_system_prompt}\n\nContext to consider silently:\n{' '.join(parts)}"})
     else:
         messages_for_api.append({"role": "system", "content": base_system_prompt})
 
-    # إضافة الرسائل السابقة والحالية
     for m in existing_msgs:
         messages_for_api.append({"role": m.role, "content": content_to_api_format(m.content)})
     
     user_body = build_fresh_user_content(data.message, data.attachments)
     messages_for_api.append({"role": "user", "content": user_body})
 
-    # الحصول على رد الذكاء الاصطناعي
-    reply = complete_chat_with_fallback(messages_for_api, primary_model, has_img)
-
-    # حفظ الرسائل في القاعدة
+    # حفظ رسالة المستخدم في القاعدة لأننا سنبث الرد
     ustore = store_user_content(data.message, data.attachments)
     add_message(conversation_id, "user", ustore)
-    add_message(conversation_id, "assistant", reply)
 
     # تحديث عنوان المحادثة تلقائياً إذا كانت جديدة
     if not data.conversation_id:
@@ -758,11 +835,76 @@ async def chat(request: Request, data: ChatRequest):
         title = title.replace("\n", " ").strip() or "محادثة جديدة"
         update_conversation_title(conversation_id, title)
 
-    return ChatResponse(reply=reply, conversation_id=conversation_id)
+    async def event_stream():
+        headers = openrouter_headers()
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        
+        # قائمة بدائل ذكية ومجانية تضمن عدم سقوط الخدمة أبداً
+        candidate_models = [
+            primary_model,
+            "google/gemini-2.0-flash-lite-preview-02-05:free",
+            "google/gemini-2.0-pro-exp-02-05:free",
+            "mistralai/mistral-7b-instruct:free",
+            "meta-llama/llama-3.2-3b-instruct:free"
+        ]
+        
+        # إزالة التكرار مع الحفاظ على الترتيب
+        models_to_try = []
+        for m in candidate_models:
+            if m not in models_to_try:
+                models_to_try.append(m)
+        
+        success = False
+        full_reply = ""
+        
+        for model in models_to_try:
+            payload = {"model": model, "messages": messages_for_api, "stream": True}
+            try:
+                async with httpx.AsyncClient(timeout=25.0) as client:
+                    async with client.stream("POST", url, headers=headers, json=payload) as resp:
+                        if resp.status_code == 200:
+                            success = True
+                            yield f"data: {json.dumps({'event': 'init', 'conversation_id': conversation_id, 'reply': ''})}\n\n"
+                            
+                            async for chunk in resp.aiter_lines():
+                                if chunk.startswith("data: "):
+                                    d = chunk[6:]
+                                    if d == "[DONE]": break
+                                    try:
+                                        j = json.loads(d)
+                                        content = j["choices"][0].get("delta", {}).get("content")
+                                        if content:
+                                            full_reply += content
+                                            yield f"data: {json.dumps({'event': 'chunk', 'content': content})}\n\n"
+                                    except Exception:
+                                        pass
+                            break
+                        else:
+                            print(f"--- STREAM HTTP {resp.status_code} with {model} ---")
+            except Exception as e:
+                print(f"--- STREAM ERROR with {model}: {e} ---")
+                continue
+                
+        if not success:
+            full_reply = "عذراً، الخوادم تواجه ضغطاً كبيراً. قد يكون حساب OpenRouter استهلك حزمة المجانيات. يرجى المحاولة لاحقاً."
+            yield f"data: {json.dumps({'event': 'error', 'content': full_reply, 'conversation_id': conversation_id})}\n\n"
+
+            
+        add_message(conversation_id, "assistant", full_reply)
+        yield f"data: {json.dumps({'event': 'done', 'reply': full_reply})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    # قراءة الملف في كل مرة أو عند الطلب لضمان عدم تعطل السيرفر عند البدء
-    html_path = BASE_DIR / "chat_ui.html"
+    # الواجهة الرئيسية الجديدة (التصميم الجديد)
+    html_path = BASE_DIR / "index.html"
+    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page(request: Request):
+    # لوحة الإدارة
+    html_path = BASE_DIR / "admin.html"
     return HTMLResponse(html_path.read_text(encoding="utf-8"))

@@ -1,17 +1,23 @@
-# AI Chat Platform
-A high-performance AI chat platform using FastAPI and OpenRouter API, featuring a professional UI, image support (Base64), and a robust model fallback system.
+# AI Chat Platform with Admin Dashboard
 
-## Features
-- **FastAPI Backend**: Efficient and modern.
-- **Vision Support**: Gemini 2.0 Flash Lite & Qwen-VL integration for images.
-- **Fallback System**: Automatic model switching on 429/404 errors.
-- **Professional UI**: Responsive chat interface with history.
-- **Dockerized**: Ready for Render, Railway, or VPS.
+مشروع شات ذكاء اصطناعي احترافي متكامل يعتمد على واجهة OpenRouter، مع نظام إدارة (Admin Panel) وإحصائيات دقيقة.
 
-## Setup
-1. `pip install -r requirements.txt`
-2. Set your `OPENROUTER_API_KEY` environment variable.
-3. `uvicorn web_app:app --host 0.0.0.0 --port 8000`
+## المميزات الرئيسي:
+- **نظام مصادقة (Auth):** يدعم تسجيل الدخول عبر جوجل (Google) والبريد الإلكتروني باستخدام Firebase.
+- **لوحة تحكم للمدير:** إدارة مفتاح الـ API والاطلاع على إحصائيات الاستخدام (نجاح/فشل الطلبات) وقائمة المستخدمين.
+- **خوارزمية اختيار الموديل:** تقوم تلقائياً باختيار أفضل موديلات الذكاء الاصطناعي المجانية والمتاحة.
+- **تصميم عصري (Glassmorphism):** واجهة مستخدم رسبونسيف بالكامل تدعم الموبايل بامتياز.
+- **أمان عالي:** حماية البيانات والوصول باستخدام Firebase Firestore Rules.
 
-## Deployment
-This app is ready for deployment on **Render.com** or **Railway.app** using the provided `Dockerfile`.
+## التقنيات المستخدمة:
+- **Frontend:** HTML5, CSS3 (Vanilla), JavaScript (ES Modules).
+- **Backend/Services:** Firebase Auth, Firebase Cloud Firestore.
+- **AI Engine:** OpenRouter API.
+
+## طريقة التشغيل:
+1. قم بتشغيل سيرفر محلي (مثل `python -m http.server`).
+2. افتح `index.html` في المتصفح.
+3. قم بتسجيل الدخول كمدير من الحساب المعين (`wemu20@gmail.com`) لضبط مفتاح الـ API.
+
+---
+تم تطوير هذا المشروع لتقديم تجربة دردشة ذكية مستقرة ومجانية للمستخدمين.

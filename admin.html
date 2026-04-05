@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatAI - لوحة تحكم الإدارة</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/admin.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="admin-body">
+
+    <!-- Security Overlay (Blocks access until Auth checks out) -->
+    <div id="adminOverlay" class="auth-overlay glass-panel">
+        <div style="text-align: center;">
+            <i class="fa-solid fa-shield-halved fa-3x" style="color: var(--primary); margin-bottom: 1rem;"></i>
+            <h2>جاري التحقق من الصلاحيات...</h2>
+        </div>
+    </div>
+
+    <!-- Sidebar Admin -->
+    <aside class="sidebar admin-sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <i class="fa-solid fa-user-shield"></i>
+                <h2>Admin</h2>
+            </div>
+        </div>
+        
+        <div class="sidebar-history">
+            <div class="history-item active" id="navDashboard">
+                <i class="fa-solid fa-chart-pie"></i>
+                <span>الإحصائيات</span>
+            </div>
+            <div class="history-item" id="navSettings">
+                <i class="fa-solid fa-key"></i>
+                <span>إعدادات API</span>
+            </div>
+            <div class="history-item" id="navUsers">
+                <i class="fa-solid fa-users"></i>
+                <span>المستخدمين</span>
+            </div>
+        </div>
+
+        <div class="sidebar-actions" style="margin-top:auto;">
+            <a href="/" class="btn-new-chat" style="text-decoration: none;">
+                <i class="fa-solid fa-arrow-right-from-bracket"></i> العودة للشات
+            </a>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="admin-container">
+        <header class="admin-header">
+            <h2>لوحة التحكم الإدارية</h2>
+            <div class="user-badge">
+                <i class="fa-solid fa-crown"></i> wemu20@gmail.com
+            </div>
+        </header>
+
+        <!-- Dashboard Section -->
+        <section id="sectionDashboard" class="admin-section active fade-in">
+            <h3 class="section-title">نظرة عامة على النظام</h3>
+            
+            <div class="stats-grid">
+                <div class="stat-card glass-panel">
+                    <div class="stat-icon" style="color: var(--primary);"><i class="fa-solid fa-users"></i></div>
+                    <div class="stat-info">
+                        <h4>إجمالي المستخدمين</h4>
+                        <span id="statUsers">--</span>
+                    </div>
+                </div>
+
+                <div class="stat-card glass-panel">
+                    <div class="stat-icon" style="color: var(--success);"><i class="fa-solid fa-check-double"></i></div>
+                    <div class="stat-info">
+                        <h4>الأسئلة الناجحة</h4>
+                        <span id="statSuccess">--</span>
+                    </div>
+                </div>
+
+                <div class="stat-card glass-panel">
+                    <div class="stat-icon" style="color: #ef4444;"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                    <div class="stat-info">
+                        <h4>الأسئلة الفاشلة</h4>
+                        <span id="statFailed">--</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- API Settings Section -->
+        <section id="sectionSettings" class="admin-section hidden fade-in">
+            <h3 class="section-title">إعدادات مفتاح OpenRouter</h3>
+            
+            <div class="glass-panel admin-panel-box">
+                <p style="color: var(--text-muted); margin-bottom: 1.5rem; line-height: 1.5;">
+                    مفتاح الـ API يظهر لك أنت كمدير فقط. يمكنك تعديله وإخفاؤه هنا.<br>
+                    <small style="color: #ef4444;">ملاحظة: لكي تعمل المحادثات للمستخدمين، يجب أن تمنح قاعدة البيانات صلاحية "القراءة" للمستخدمين المسجلين، ولكن التعديل مقتصر عليك.</small>
+                </p>
+
+                <div class="input-group-auth" style="margin-bottom: 1rem;">
+                    <i class="fa-solid fa-key"></i>
+                    <input type="password" id="apiKeyInput" placeholder="جاري جلب المفتاح الحالي..." disabled>
+                    <button id="toggleVisibleBtn" class="btn-icon secondary" style="position: absolute; left: 10px; right: auto; width: 35px; height: 35px;">
+                        <i class="fa-solid fa-eye"></i>
+                    </button>
+                </div>
+                
+                <button id="saveApiBtn" class="btn-primary-auth" style="width: auto; padding: 0.8rem 2rem;">
+                    حفظ المفتاح الجديد
+                </button>
+                <span id="saveKeyStatus" style="margin-right: 15px; color: var(--success); display: none;">تم الحفظ بنجاح!</span>
+            </div>
+        </section>
+
+        <!-- Users List Section -->
+        <section id="sectionUsers" class="admin-section hidden fade-in">
+            <h3 class="section-title">قائمة المستخدمين</h3>
+            <div class="glass-panel admin-panel-box">
+                <table class="users-table">
+                    <thead>
+                        <tr>
+                            <th>الاسم</th>
+                            <th>البريد الإلكتروني</th>
+                            <th>تاريخ التسجيل</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                        <tr>
+                            <td colspan="3" style="text-align: center; color: var(--text-muted);">جاري التحميل...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    </main>
+
+    <script type="module" src="/static/admin.js"></script>
+</body>
+</html>

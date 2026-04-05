@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <!-- إعدادات العرض لضمان التوافق مع الجوال ومنع الزووم التلقائي -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI Chat - ذكاء اصطناعي مجاني</title>
+    <!-- استيراد الخطوط العصرية من جوجل -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- مكتبة أيقونات FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Code Highlight and Markdown Styling -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
+</head>
+<body>
+
+    <!-- نافذة تسجيل الدخول والاشتراك (تظهر تلقائياً إذا لم يكن المستخدم مسجلاً) -->
+    <div id="authOverlay" class="auth-overlay glass-panel">
+        <div class="auth-box">
+            <div class="auth-header">
+                <i class="fa-solid fa-sparkles"></i>
+                <h2>مرحباً بك في ChatAI</h2>
+                <p>سجل دخولك لبدء المحادثة الذكية</p>
+            </div>
+            
+            <button id="btnGoogleSignIn" class="btn-google">
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google Logo" class="google-logo">
+                المتابعة باستخدام حساب جوجل
+            </button>
+
+            <div class="divider">
+                <span>أو البريد الإلكتروني</span>
+            </div>
+            
+            <div class="auth-tabs">
+                <button class="auth-tab active" id="tabLogin">تسجيل دخول</button>
+                <button class="auth-tab" id="tabRegister">إنشاء حساب</button>
+            </div>
+
+            <!-- Login Form -->
+            <form id="loginForm" class="auth-form active">
+                <div class="input-group-auth">
+                    <i class="fa-regular fa-envelope"></i>
+                    <input type="email" id="loginEmail" placeholder="البريد الإلكتروني" required>
+                </div>
+                <div class="input-group-auth">
+                    <i class="fa-solid fa-lock"></i>
+                    <input type="password" id="loginPassword" placeholder="كلمة المرور" required>
+                </div>
+                <button type="submit" class="btn-primary-auth">دخول</button>
+            </form>
+
+            <!-- Register Form -->
+            <form id="registerForm" class="auth-form hidden">
+                <div class="input-group-auth">
+                    <i class="fa-regular fa-user"></i>
+                    <input type="text" id="registerName" placeholder="الاسم الكامل" required>
+                </div>
+                <div class="input-group-auth">
+                    <i class="fa-regular fa-envelope"></i>
+                    <input type="email" id="registerEmail" placeholder="البريد الإلكتروني" required>
+                </div>
+                <div class="input-group-auth">
+                    <i class="fa-solid fa-lock"></i>
+                    <input type="password" id="registerPassword" placeholder="كلمة المرور" required>
+                </div>
+                <button type="submit" class="btn-primary-auth">إنشاء الحساب</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Sidebar / Header on Mobile -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <i class="fa-solid fa-sparkles"></i>
+                <h2>ChatAI</h2>
+            </div>
+            <button class="close-sidebar d-mobile" id="closeSidebar">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        
+        <div class="sidebar-actions">
+            <!-- Clear Chat Button moved to sidebar -->
+            <button id="clearChatBtn" class="btn-new-chat">
+                <i class="fa-solid fa-plus"></i> محادثة جديدة
+            </button>
+        </div>
+
+        <div class="sidebar-history">
+            <h3 class="section-title">محادثاتي</h3>
+            <!-- Placeholder for history -->
+            <div class="history-item active">
+                <i class="fa-regular fa-message"></i>
+                <span>محادثة اليوم</span>
+            </div>
+        </div>
+        
+        <!-- User Profile / Logout Section -->
+        <div class="user-profile-section" id="userProfileSection" style="display: none; margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--glass-border);">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div class="avatar" style="width: 30px; height: 30px;"><i class="fa-solid fa-user"></i></div>
+                    <span id="userNameDisplay" style="font-size: 0.9rem; font-weight: 500;">المستخدم</span>
+                </div>
+                <button id="logoutBtn" title="تسجيل الخروج" style="background: none; border: none; color: #ef4444; cursor: pointer;">
+                    <i class="fa-solid fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </div>
+
+    </aside>
+
+    <!-- Main Chat Area -->
+    <main class="chat-container">
+        <header class="mobile-header d-mobile">
+            <button id="openSidebar" class="btn-icon"><i class="fa-solid fa-bars"></i></button>
+            <h2>ChatAI</h2>
+            <div style="width: 32px"></div>
+        </header>
+
+        <div class="chat-messages" id="chatMessages">
+            <div class="welcome-screen">
+                <div class="welcome-icon"><i class="fa-solid fa-robot"></i></div>
+                <h2>كيف يمكنني مساعدتك؟</h2>
+                <p>اطرح سؤالك، اطلب كوداً، أو قم بأي مهمة تخطر ببالك</p>
+            </div>
+        </div>
+
+        <div class="chat-input-area">
+            <div class="input-wrapper glass-panel">
+                <!-- Media Attachment Button instead of Delete -->
+                <button id="attachMediaBtn" class="btn-icon secondary" title="إرفاق ملف أو صورة">
+                    <i class="fa-solid fa-paperclip"></i>
+                </button>
+                <textarea id="messageInput" placeholder="اكتب رسالتك هنا..." rows="1" dir="auto"></textarea>
+                <button id="sendBtn" class="btn-send"><i class="fa-solid fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Markdown libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+
+    <!-- Use type="module" to enable import inside app.js -->
+    <script type="module" src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,118 @@
+/* admin.css */
+.admin-body {
+    display: flex;
+    background: var(--bg-main);
+    color: var(--text-main);
+}
+
+.admin-sidebar {
+    width: 260px;
+    border-right: none;
+    border-left: 1px solid var(--glass-border);
+}
+
+.admin-container {
+    flex: 1;
+    padding: 2rem 3rem;
+    overflow-y: auto;
+}
+
+.admin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 3rem;
+    border-bottom: 1px solid var(--glass-border);
+    padding-bottom: 1rem;
+}
+
+.admin-header h2 {
+    font-family: 'Outfit';
+    font-size: 1.8rem;
+    background: linear-gradient(to right, #fff, #a5b4fc);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.user-badge {
+    background: rgba(99, 102, 241, 0.15);
+    border: 1px solid var(--primary);
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.admin-section {
+    display: none;
+}
+
+.admin-section.active {
+    display: block;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    padding: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.stat-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.05);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.8rem;
+}
+
+.stat-info h4 {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin-bottom: 0.5rem;
+}
+
+.stat-info span {
+    font-size: 1.8rem;
+    font-weight: 700;
+    font-family: 'Outfit';
+}
+
+.admin-panel-box {
+    padding: 2rem;
+}
+
+.users-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.users-table th {
+    text-align: right;
+    padding: 1rem;
+    border-bottom: 1px solid var(--glass-border);
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.users-table td {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.02);
+}
+
+.users-table tr:hover td {
+    background: rgba(255,255,255,0.02);
+}
