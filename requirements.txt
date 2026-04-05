@@ -7,3 +7,4 @@ a2wsgi
 itsdangerous
 pydantic
 pydantic-settings
+httpx
