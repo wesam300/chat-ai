@@ -607,26 +607,16 @@
     async function refreshAuth() {
       try {
         const res = await apiFetch("/api/auth/me");
-        if (!res.ok) {
-           currentUser = null;
-        } else {
-           const data = await res.json();
-           currentUser = data.user || null;
+        const data = await res.json();
+        currentUser = data.user;
+        $("auth-banner").classList.toggle("hidden", !!currentUser);
+        $("user-chip").classList.toggle("hidden", !currentUser);
+        if (currentUser) {
+          $("chip-user-name").textContent = currentUser.username;
+          anonymousHistory = [];
         }
       } catch (e) {
-        currentUser = null;
-      }
-      
-      // تحديث الواجهة بناءً على النتيجة النهائية
-      if (currentUser) {
-        $("auth-banner").classList.add("hidden");
-        $("user-chip").classList.remove("hidden");
-        $("chip-user-name").textContent = currentUser.username;
-        anonymousHistory = [];
-      } else {
-        $("auth-banner").classList.remove("hidden");
-        $("user-chip").classList.add("hidden");
-        $("chip-user-name").textContent = "—";
+        console.error(e);
       }
     }
 
