@@ -396,7 +396,7 @@ body {
 
 /* رسالة المستخدم: تتماشى تماما مع ChatGPT بالتمركز من نفس الجهة أو يمكننا جعلها تطفو للجهة الأخرى */
 .message.user-message {
-  align-items: flex-start; /* اليمين في वाجهة عربية */
+  align-items: flex-start; /* اليمين في واجهة عربية */
   width: 100%;
 }
 
@@ -553,9 +553,51 @@ textarea {
 /* Animations */
 @keyframes spin { 100% { transform: rotate(360deg); } }
 @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+/* Attachment Preview */
+.attachment-preview-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(0,0,0,0.2);
+  border-bottom: 1px solid var(--glass-border);
+  border-radius: 12px 12px 0 0;
+}
 
-.fade-in { animation: fadeIn 0.4s ease forwards; }
+.attachment-preview-list:empty {
+  display: none;
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 4px 10px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 15px;
+  font-size: 0.8rem;
+  color: var(--text-main);
+}
+
+.attachment-item .remove-file {
+  cursor: pointer;
+  color: #ef4444;
+  opacity: 0.7;
+}
+
+.attachment-item .remove-file:hover {
+  opacity: 1;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
 
 /* Responsive / Mobile Design */
 @media (max-width: 850px) {

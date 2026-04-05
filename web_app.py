@@ -43,19 +43,19 @@ OPENROUTER_SITE_NAME = os.environ.get("OPENROUTER_SITE_NAME", "AI Chat")
 
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "dev-change-me-for-production")
 
-# قائمة الموديلات المجانية فقط (ضمان عدم وجود رسوم)
+# قائمة الموديلات المجانية فائقة الاستقرار (مُحدثة 2026)
 M_QWEN_FREE = "qwen/qwen-2.5-72b-instruct:free"
-M_DEEPSEEK_FREE = "deepseek/deepseek-r1:free"
 M_GEMINI_LITE = "google/gemini-2.0-flash-lite-preview-02-05:free"
 M_GEMINI_FLASH = "google/gemini-2.0-flash-exp:free"
-M_MISTRAL_7B = "mistralai/mistral-7b-instruct:free"
-M_OPENROUTER_FREE = "openrouter/free"
+M_DEEPSEEK_FREE = "deepseek/deepseek-r1:free"
+M_OPENROUTER_FREE = "openrouter/free" 
 
 
 def select_openrouter_model(message: str, has_image_attachments: bool, history_text: str) -> str:
-    # استخدام موديل Qwen 2.5 72B المجاني كونه الأكثر استقراراً وقوة حالياً
+    # القوة الضاربة: إذا كانت هناك صور، نستخدم Gemini فوراً لأنه يدعم الرؤية Vision
     if has_image_attachments:
         return M_GEMINI_LITE
+    # للدردشة النصية العادية، Qwen 2.5 هو الأفضل والأكثر استقراراً
     return M_QWEN_FREE
 
 
@@ -839,13 +839,12 @@ async def chat(request: Request, data: ChatRequest):
         headers = openrouter_headers()
         url = "https://openrouter.ai/api/v1/chat/completions"
         
-        # قائمة بدائل مجانية فائقة الاستقرار
+        # حلقة نجاة ذكية: تجربة أفضل الموديلات المجانية بترتيب التوفر
         candidate_models = [
             primary_model,
-            M_DEEPSEEK_FREE,
             M_GEMINI_FLASH,
             M_QWEN_FREE,
-            M_OPENROUTER_FREE  # المنقذ النهائي للبحث عن أي موديل مجاني متاح
+            M_OPENROUTER_FREE  # هذا الموديل يحولك تلقائياً لأي موديل مجاني متاح حالياً
         ]
         
         # إزالة التكرار مع الحفاظ على الترتيب

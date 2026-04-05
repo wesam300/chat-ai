@@ -177,12 +177,19 @@ async function loadChat(id) {
 
 // Expose copy function globally for inline onclick handlers
 window.copyCodeClick = function(button, encodedCode) {
-    navigator.clipboard.writeText(decodeURIComponent(encodedCode)).then(() => {
-        const originalText = button.innerHTML;
-        button.innerHTML = '<i class="fa-solid fa-check"></i> تم';
-        setTimeout(() => button.innerHTML = originalText, 2000);
+    const code = decodeURIComponent(encodedCode);
+    navigator.clipboard.writeText(code).then(() => {
+        // تأثير بصري حقيقي: تغيير الأيقونة واللون والنص
+        const originalHTML = button.innerHTML;
+        button.classList.add('copied');
+        button.innerHTML = '<i class="fa-solid fa-check"></i> تم النسخ!';
+        
+        setTimeout(() => {
+            button.classList.remove('copied');
+            button.innerHTML = originalHTML;
+        }, 2000);
     }).catch(err => {
-        console.error('Failed to copy: ', err);
+        console.error('فشل في النسخ:', err);
     });
 };
 
@@ -348,8 +355,39 @@ async function handleSend() {
     }
 }
 
-sendBtn.addEventListener('click', handleSend);
-messageInput.addEventListener('keydown', (e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } });
+// File Upload UI logic
+const fileInput = document.getElementById('chat-file');
+const attachmentList = document.createElement('div');
+attachmentList.className = 'attachment-preview-list';
+document.querySelector('.input-container').insertBefore(attachmentList, document.querySelector('.input-row'));
+
+fileInput.addEventListener('change', () => {
+    attachmentList.innerHTML = '';
+    if (fileInput.files.length > 0) {
+        for (let file of fileInput.files) {
+            const item = document.createElement('div');
+            item.className = 'attachment-item';
+            item.innerHTML = `<i class="fa-solid fa-paperclip"></i> <span>${file.name}</span> <i class="fa-solid fa-xmark remove-file"></i>`;
+            item.querySelector('.remove-file').onclick = () => {
+                fileInput.value = '';
+                attachmentList.innerHTML = '';
+            };
+            attachmentList.appendChild(item);
+        }
+    }
+});
+
+sendBtn.addEventListener('click', () => {
+    handleSend();
+    attachmentList.innerHTML = ''; // Clear after send
+});
+messageInput.addEventListener('keydown', (e) => { 
+    if(e.key === 'Enter' && !e.shiftKey) { 
+        e.preventDefault(); 
+        handleSend(); 
+        attachmentList.innerHTML = ''; // Clear after send
+    } 
+});
 
 clearChatBtn.addEventListener('click', () => {
     currentConversationId = null;
