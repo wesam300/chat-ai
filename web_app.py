@@ -44,17 +44,19 @@ OPENROUTER_SITE_NAME = os.environ.get("OPENROUTER_SITE_NAME", "AI Chat")
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "dev-change-me-for-production")
 
 # قائمة الموديلات المجانية فقط (ضمان عدم وجود رسوم)
+M_QWEN_FREE = "qwen/qwen-2.5-72b-instruct:free"
+M_DEEPSEEK_FREE = "deepseek/deepseek-r1:free"
 M_GEMINI_LITE = "google/gemini-2.0-flash-lite-preview-02-05:free"
+M_GEMINI_FLASH = "google/gemini-2.0-flash-exp:free"
 M_MISTRAL_7B = "mistralai/mistral-7b-instruct:free"
-M_LLAMA_32 = "meta-llama/llama-3.2-3b-instruct:free"
-M_GEMINI_LITE_THINK = "google/gemini-2.0-flash-thinking-exp-1219:free"
+M_OPENROUTER_FREE = "openrouter/free"
 
 
 def select_openrouter_model(message: str, has_image_attachments: bool, history_text: str) -> str:
-    # استخدام الموديلات المجانية فقط
+    # استخدام موديل Qwen 2.5 72B المجاني كونه الأكثر استقراراً وقوة حالياً
     if has_image_attachments:
         return M_GEMINI_LITE
-    return M_GEMINI_LITE_THINK
+    return M_QWEN_FREE
 
 
 def openrouter_headers() -> Dict[str, str]:
@@ -837,12 +839,13 @@ async def chat(request: Request, data: ChatRequest):
         headers = openrouter_headers()
         url = "https://openrouter.ai/api/v1/chat/completions"
         
-        # قائمة بدائل مجانية تماماً بنسبة 100%
+        # قائمة بدائل مجانية فائقة الاستقرار
         candidate_models = [
             primary_model,
-            M_GEMINI_LITE,
-            M_MISTRAL_7B,
-            M_LLAMA_32
+            M_DEEPSEEK_FREE,
+            M_GEMINI_FLASH,
+            M_QWEN_FREE,
+            M_OPENROUTER_FREE  # المنقذ النهائي للبحث عن أي موديل مجاني متاح
         ]
         
         # إزالة التكرار مع الحفاظ على الترتيب
